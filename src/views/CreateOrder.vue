@@ -272,7 +272,7 @@ const statusFlows = [
 const getProduct = computed(() => product.getProduct)
 const shipmentMethodsByCarrier = computed(() => utilStore.getShipmentMethodsByCarrier)
 const getCarrierDesc = computed(() => utilStore.getCarrierDesc)
-const facilities = computed(() => productStore.getProductStoreFacilities)
+const facilities = ref<any[]>([])
 // Implemented watcher to display the search spinner correctly. Mainly the watcher is needed to not make the findProduct call always and to create the debounce effect.
 // Previously we were using the `debounce` property of ion-input but it was updating the searchedString and making other related effects after the debounce effect thus the spinner is also displayed after the debounce
 // effect is completed.
@@ -302,6 +302,9 @@ onIonViewDidEnter(async () => {
   stores.value = useProductStore().productStores
   const currentProductStoreId = (useProductStore().getCurrentProductStore as any)?.productStoreId || "";
   currentOrder.value.productStoreId = currentProductStoreId
+  facilities.value = productStore.getProductStoreFacilities?.length
+    ? [...productStore.getProductStoreFacilities]
+    : await productStore.fetchFacilitiesByProductStore(currentProductStoreId)
   await Promise.allSettled([utilStore.fetchStoreCarrierAndMethods(currentProductStoreId), utilStore.fetchCarriersDetail()])
   await fetchProductStoreDetails(currentProductStoreId);
   if(Object.keys(shipmentMethodsByCarrier.value)?.length) {
@@ -351,21 +354,40 @@ async function productStoreUpdated() {
   // Reset selected facilities
   currentOrder.value.originFacilityId = "";
   currentOrder.value.destinationFacilityId = "";
+  facilities.value = [];
 
-  // Refresh facilities for the newly selected Product Store
-  await productStore.fetchProductStoreFacilities(currentOrder.value.productStoreId);
+  // Clear item stock
+  currentOrder.value.items.forEach((item: any) => {
+    delete item.qoh;
+    delete item.atp;
+  });
 
-  // Refetch stock if items already exist
-  if (currentOrder.value.items.length) {
-    refetchAllItemsStock();
-  }
+  const selectedStoreId = currentOrder.value.productStoreId;
 
-  // Refresh carrier and shipment methods
-  await utilStore.fetchStoreCarrierAndMethods(currentOrder.value.productStoreId);
+  // Fetch facilities and carriers together behind the loader
+  emitter.emit("presentLoader");
+  try {
+    const [facilitiesResp] = await Promise.all([
+      productStore.fetchFacilitiesByProductStore(selectedStoreId),
+      utilStore.fetchStoreCarrierAndMethods(selectedStoreId)
+    ]);
 
-  if(Object.keys(shipmentMethodsByCarrier.value)?.length) {
-    currentOrder.value.carrierPartyId = Object.keys(shipmentMethodsByCarrier.value)[0]
-    selectUpdatedMethod()
+    // Guard against race condition if user changed store again while request was in-flight
+    if (selectedStoreId !== currentOrder.value.productStoreId) return;
+
+    facilities.value = facilitiesResp || [];
+
+    if(Object.keys(shipmentMethodsByCarrier.value)?.length) {
+      currentOrder.value.carrierPartyId = Object.keys(shipmentMethodsByCarrier.value)[0];
+      selectUpdatedMethod();
+    } else {
+      currentOrder.value.carrierPartyId = "";
+      currentOrder.value.shipmentMethodTypeId = "";
+    }
+  } catch (err) {
+    logger.error("Failed to update product store dependencies", err);
+  } finally {
+    emitter.emit("dismissLoader");
   }
 }
 
