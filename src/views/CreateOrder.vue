@@ -116,7 +116,7 @@
           <div class="item-search">
             <ion-item>
               <ion-icon slot="start" :icon="listOutline"/>
-              <ion-input data-testid="create-order-add-product-input" :label="translate('Add product')" label-placement="floating" :clear-input="true" v-model="queryString" :placeholder="productSearchPlaceholder" @keyup.enter="addProductToCount()" />
+              <ion-input data-testid="create-order-add-product-input" :label="translate('Add product')" label-placement="floating" :clear-input="true" v-model="queryString" :placeholder="translate('Search by product name, SKU, UPC or parent product name')" @keyup.enter="addProductToCount()" />
             </ion-item>
             <ion-item lines="none" v-if="isSearchingProduct">
               <ion-spinner color="secondary" name="crescent"></ion-spinner>
@@ -274,14 +274,6 @@ const shipmentMethodsByCarrier = computed(() => utilStore.getShipmentMethodsByCa
 const getCarrierDesc = computed(() => utilStore.getCarrierDesc)
 const facilities = computed(() => productStore.getProductStoreFacilities)
 
-const productSearchPlaceholder = computed(() => {
-  const primaryId = productStore.getProductIdentificationPref?.primaryId;
-  const options = productStore.getProductIdentificationOptions || [];
-  const description = options.find((option: any) => option.goodIdentificationTypeId === primaryId)?.description;
-
-  return translate(`Searching on ${description || primaryId}`);
-});
-
 // Implemented watcher to display the search spinner correctly. Mainly the watcher is needed to not make the findProduct call always and to create the debounce effect.
 // Previously we were using the `debounce` property of ion-input but it was updating the searchedString and making other related effects after the debounce effect thus the spinner is also displayed after the debounce
 // effect is completed.
@@ -309,7 +301,6 @@ watch(queryString, (value) => {
 onIonViewDidEnter(async () => {
   emitter.emit("presentLoader")
   stores.value = useProductStore().productStores
-  productStore.prepareProductIdentifierOptions();
   const currentProductStoreId = (useProductStore().getCurrentProductStore as any)?.productStoreId || "";
   currentOrder.value.productStoreId = currentProductStoreId
   await Promise.allSettled([utilStore.fetchStoreCarrierAndMethods(currentProductStoreId), utilStore.fetchCarriersDetail()])
@@ -619,22 +610,40 @@ function isProductAvailableInOrder() {
 
 async function findProduct() {
   if(!queryString.value.trim()) {
-    commonUtil.showToast(translate("Enter a valid product sku"), { position: 'top' });
+    commonUtil.showToast(translate("Enter a valid product identifier"), { position: 'top' });
     return;
   }
 
   isSearchingProduct.value = true;
   try {
+    const query = queryString.value.trim();
     const resp = await useSolrSearch().searchProducts({
-      "keyword": queryString.value.trim(),
+      "keyword": query,
       "filters": {
         "isVirtual": { value: "false" },
         "isVariant": { value: "true" }
       },
-      "viewSize": 1
+      "viewSize": 10
     })
-    if (resp.products.length) {
-      searchedProduct.value = resp.products[0];
+    if (resp.products?.length) {
+      const queryLower = query.toLowerCase();
+      const exactMatch = resp.products.find((p: any) => {
+        if (p.productId?.toLowerCase() === queryLower || p.sku?.toLowerCase() === queryLower || p.internalName?.toLowerCase() === queryLower) {
+          return true;
+        }
+        if (Array.isArray(p.goodIdentifications)) {
+          return p.goodIdentifications.some((id: any) => {
+            if (typeof id === "string") {
+              const val = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : id;
+              return val.toLowerCase() === queryLower || id.toLowerCase() === queryLower;
+            }
+            const val = id?.value ?? id?.idValue;
+            return String(val ?? "").toLowerCase() === queryLower;
+          });
+        }
+        return false;
+      });
+      searchedProduct.value = exactMatch || resp.products[0];
       product.addProductToCached(searchedProduct.value)      
     } else {
       throw resp
