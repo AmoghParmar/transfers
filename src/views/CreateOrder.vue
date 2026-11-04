@@ -116,7 +116,7 @@
           <div class="item-search">
             <ion-item>
               <ion-icon slot="start" :icon="listOutline"/>
-              <ion-input data-testid="create-order-add-product-input" :label="translate('Add product')" label-placement="floating" :clear-input="true" v-model="queryString" :placeholder="translate('Search by product name, SKU, UPC or parent product name')" @keyup.enter="addProductToCount(searchedProduct)" />
+              <ion-input data-testid="create-order-add-product-input" :label="translate('Add product')" label-placement="floating" :clear-input="true" v-model="queryString" :placeholder="translate('Search by product name, SKU, UPC or parent product name')" @keyup.enter="!isSearchingProduct && addProductToCount(searchedProduct)" />
             </ion-item>
             <ion-item lines="none" v-if="isSearchingProduct">
               <ion-spinner color="secondary" name="crescent"></ion-spinner>
@@ -130,7 +130,7 @@
                   <p class="overline">{{ translate("Search result") }}</p>
                   {{ searchedProduct.internalName || searchedProduct.sku || searchedProduct.productId }}
                 </ion-label>
-                <ion-button data-testid="create-order-add-product-btn" :disabled="isAddingProduct" size="default" slot="end" fill="clear" @click="addProductToCount(searchedProduct)" :color="isProductAvailableInOrder(searchedProduct.productId) ? 'success' : 'primary'">
+                <ion-button data-testid="create-order-add-product-btn" :disabled="pendingProductIds.has(searchedProduct.productId)" size="default" slot="end" fill="clear" @click="addProductToCount(searchedProduct)" :color="isProductAvailableInOrder(searchedProduct.productId) ? 'success' : 'primary'">
                   <ion-icon slot="icon-only" :icon="isProductAvailableInOrder(searchedProduct.productId) ? checkmarkCircle : addCircleOutline"/>
                 </ion-button>
               </ion-item>
@@ -230,10 +230,10 @@ let timeoutId = ref();
 const isSearchingProduct = ref(false);
 const searchedProduct = ref({}) as any;
 const productSearchCount = ref(0);
+const pendingProductIds = ref(new Set());
 const queryString = ref("");
 const stores = ref([]) as any;
 const dateTimeModalOpen = ref(false);
-const isAddingProduct = ref(false)
 const selectedDateFilter = ref("");
 const currencyUom = ref("");
 const currentOrder = ref<{
@@ -334,11 +334,11 @@ async function fetchProductStoreDetails(productStoreId: string) {
 }
 
 async function addProductToCount(prod: any) {
-  if (isAddingProduct.value) return;
   if (!prod?.productId) return;
+  if (pendingProductIds.value.has(prod.productId)) return;
   if (isProductAvailableInOrder(prod.productId)) return;
 
-  isAddingProduct.value = true;
+  pendingProductIds.value.add(prod.productId);
 
   let newProduct = { 
     productId: prod.productId,
@@ -347,16 +347,18 @@ async function addProductToCount(prod: any) {
     isChecked: false,
   } as any;
 
-  const stock = await fetchStock(newProduct.productId);
-  if(stock?.qoh || stock?.qoh === 0) {
-    newProduct = { ...newProduct, qoh: stock.qoh, atp: stock.atp };
+  try {
+    const stock = await fetchStock(newProduct.productId);
+    if(stock?.qoh || stock?.qoh === 0) {
+      newProduct = { ...newProduct, qoh: stock.qoh, atp: stock.atp };
+    }
+    currentOrder.value.items.push(newProduct);
+  } catch (err) {
+    logger.error("Failed to add product to order", err);
+  } finally {
+    pendingProductIds.value.delete(prod.productId);
   }
-
-  currentOrder.value.items.push(newProduct);
-  isAddingProduct.value = false;
 }
-
-const addProductToOrder = addProductToCount;
 
 async function productStoreUpdated() {
 
@@ -615,9 +617,8 @@ async function refetchAllItemsStock() {
   emitter.emit("dismissLoader")
 }
 
-function isProductAvailableInOrder(productId?: string) {
-  const id = productId ?? searchedProduct.value.productId;
-  return currentOrder.value.items.some((item: any) => item.productId === id);
+function isProductAvailableInOrder(productId: string) {
+  return currentOrder.value.items.some((item: any) => item.productId === productId);
 }
 
 async function findProduct() {
@@ -658,9 +659,9 @@ async function openAddProductModal() {
     component: AddProductModal,
     componentProps: {
       query: queryString.value,
-      addProductToQueue: ({ product }: any) => addProductToOrder(product),
+      addProductToQueue: ({ product }: any) => addProductToCount(product),
       isProductInOrder: (id: string) => isProductAvailableInOrder(id),
-      pendingProductIds: new Set()
+      pendingProductIds: pendingProductIds.value
     }
   });
 

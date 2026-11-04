@@ -10,7 +10,7 @@
     </ion-toolbar>
   </ion-header>
   <ion-content>
-    <ion-searchbar data-testid="add-product-searchbar" v-model="queryString" :placeholder="translate('Search SKU or product name')" @keyup.enter="handleSearch" @ionInput="handleInput"/>
+    <ion-searchbar data-testid="add-product-searchbar" v-model="queryString" :placeholder="translate('Search by product name, SKU, UPC or parent product name')" @keyup.enter="handleSearch" @ionInput="handleInput"/>
 
     <template v-if="products.length">
       <ion-list v-for="product in products" :key="product.productId" :data-testid="`add-product-row-${product.productId}`">
