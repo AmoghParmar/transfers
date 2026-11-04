@@ -593,7 +593,7 @@ async function openSelectFacilityModal(facilityType: any) {
 }
 
 async function refetchAllItemsStock() {
-  emitter.emit("presentLoader", { message: "Updating items...", backdropDismiss: false });
+  emitter.emit("presentLoader", { message: translate("Fetching inventory for the selected origin facility..."), backdropDismiss: false });
   const responses = await Promise.allSettled(currentOrder.value.items.map((item: any) => fetchStock(item.productId)))
   currentOrder.value.items.map((item: any, index: any) => {
     if(responses[index].status === "fulfilled") {
