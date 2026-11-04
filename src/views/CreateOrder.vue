@@ -116,23 +116,28 @@
           <div class="item-search">
             <ion-item>
               <ion-icon slot="start" :icon="listOutline"/>
-              <ion-input data-testid="create-order-add-product-input" :label="translate('Add product')" label-placement="floating" :clear-input="true" v-model="queryString" :placeholder="translate('Searching on SKU')" @keyup.enter="addProductToCount()" />
+              <ion-input data-testid="create-order-add-product-input" :label="translate('Add product')" label-placement="floating" :clear-input="true" v-model="queryString" :placeholder="translate('Search by product name, SKU, UPC or parent product name')" @keyup.enter="!isSearchingProduct && addProductToCount(searchedProduct)" />
             </ion-item>
             <ion-item lines="none" v-if="isSearchingProduct">
               <ion-spinner color="secondary" name="crescent"></ion-spinner>
             </ion-item>
-            <ion-item lines="none" v-else-if="searchedProduct.productId">
-              <ion-thumbnail slot="start">
-                <Image :src="getProduct(searchedProduct.productId).mainImageUrl"/>
-              </ion-thumbnail>
-              <ion-label>
-                <p class="overline">{{ translate("Search result") }}</p>
-                {{ searchedProduct.internalName || searchedProduct.sku || searchedProduct.productId }}
-              </ion-label>
-              <ion-button data-testid="create-order-add-product-btn" :disabled="isAddingProduct" size="default" slot="end" fill="clear" @click="addProductToCount" :color="isProductAvailableInOrder() ? 'success' : 'primary'">
-                <ion-icon slot="icon-only" :icon="isProductAvailableInOrder() ? checkmarkCircle : addCircleOutline"/>
-              </ion-button>
-            </ion-item>
+            <ion-list lines="none" v-else-if="searchedProduct.productId">
+              <ion-item>
+                <ion-thumbnail slot="start">
+                  <Image :src="getProduct(searchedProduct.productId).mainImageUrl"/>
+                </ion-thumbnail>
+                <ion-label>
+                  <p class="overline">{{ translate("Search result") }}</p>
+                  {{ searchedProduct.internalName || searchedProduct.sku || searchedProduct.productId }}
+                </ion-label>
+                <ion-button data-testid="create-order-add-product-btn" :disabled="pendingProductIds.has(searchedProduct.productId)" size="default" slot="end" fill="clear" @click="addProductToCount(searchedProduct)" :color="isProductAvailableInOrder(searchedProduct.productId) ? 'success' : 'primary'">
+                  <ion-icon slot="icon-only" :icon="isProductAvailableInOrder(searchedProduct.productId) ? checkmarkCircle : addCircleOutline"/>
+                </ion-button>
+              </ion-item>
+              <ion-item button v-if="productSearchCount > 1" data-testid="view-more-results" detail @click="openAddProductModal">
+                {{ translate("View more results", { count: productSearchCount - 1 }) }}
+              </ion-item>
+            </ion-list>
             <p v-else-if="queryString">{{ translate("No product found") }}</p>
           </div>
 
@@ -197,11 +202,12 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardTitle, IonCheckbox, IonChip, IonContent, IonDatetime, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonSelect, IonSelectOption, IonSpinner, IonThumbnail, IonTitle, IonToolbar, onIonViewDidEnter, alertController, modalController, popoverController } from '@ionic/vue';
+import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardTitle, IonCheckbox, IonChip, IonContent, IonDatetime, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSelect, IonSelectOption, IonSpinner, IonThumbnail, IonTitle, IonToolbar, onIonViewDidEnter, alertController, modalController, popoverController } from '@ionic/vue';
 import { addCircleOutline, checkmarkCircle, checkmarkDoneOutline, ellipsisVerticalOutline, informationCircleOutline, listOutline, sendOutline, storefrontOutline, downloadOutline } from 'ionicons/icons';
 import { computed, ref, watch } from "vue";
 import { commonUtil, emitter, logger, translate, useSolrSearch } from '@common';
 import Image from '@/components/Image.vue';
+import AddProductModal from '@/components/AddProductModal.vue';
 import OrderItemActionsPopover from '@/components/OrderItemActionsPopover.vue';
 import SelectFacilityModal from '@/components/SelectFacilityModal.vue';
 import router from '@/router';
@@ -223,10 +229,11 @@ const utilStore = useUtilStore();
 let timeoutId = ref();
 const isSearchingProduct = ref(false);
 const searchedProduct = ref({}) as any;
+const productSearchCount = ref(0);
+const pendingProductIds = ref(new Set());
 const queryString = ref("");
 const stores = ref([]) as any;
 const dateTimeModalOpen = ref(false);
-const isAddingProduct = ref(false)
 const selectedDateFilter = ref("");
 const currencyUom = ref("");
 const currentOrder = ref<{
@@ -283,6 +290,7 @@ watch(queryString, (value) => {
     isSearchingProduct.value = true
   } else {
     searchedProduct.value = {}
+    productSearchCount.value = 0
     isSearchingProduct.value = false
   }
 
@@ -337,27 +345,31 @@ async function fetchProductStoreDetails(productStoreId: string) {
   }
 }
 
-async function addProductToCount() {
-  if (isAddingProduct.value) return
-  if (!searchedProduct.value.productId || !queryString.value) return;
-  if (isProductAvailableInOrder()) return;
+async function addProductToCount(prod: any) {
+  if (!prod?.productId) return;
+  if (pendingProductIds.value.has(prod.productId)) return;
+  if (isProductAvailableInOrder(prod.productId)) return;
 
-  isAddingProduct.value = true
+  pendingProductIds.value.add(prod.productId);
 
   let newProduct = { 
-    productId: searchedProduct.value.productId,
-    sku: searchedProduct.value.sku,
+    productId: prod.productId,
+    sku: prod.sku,
     quantity: 0,
     isChecked: false,
   } as any;
 
-  const stock = await fetchStock(newProduct.productId);
-  if(stock?.qoh || stock?.qoh === 0) {
-    newProduct = { ...newProduct, qoh: stock.qoh, atp: stock.atp };
+  try {
+    const stock = await fetchStock(newProduct.productId);
+    if(stock?.qoh || stock?.qoh === 0) {
+      newProduct = { ...newProduct, qoh: stock.qoh, atp: stock.atp };
+    }
+    currentOrder.value.items.push(newProduct);
+  } catch (err) {
+    logger.error("Failed to add product to order", err);
+  } finally {
+    pendingProductIds.value.delete(prod.productId);
   }
-
-  currentOrder.value.items.push(newProduct);
-  isAddingProduct.value = false
 }
 
 async function productStoreUpdated() {
@@ -627,7 +639,7 @@ async function openSelectFacilityModal(facilityType: any) {
 }
 
 async function refetchAllItemsStock() {
-  emitter.emit("presentLoader", { message: "Updating items...", backdropDismiss: false });
+  emitter.emit("presentLoader", { message: translate("Fetching inventory for the selected origin facility..."), backdropDismiss: false });
   const responses = await Promise.allSettled(currentOrder.value.items.map((item: any) => fetchStock(item.productId)))
   currentOrder.value.items.map((item: any, index: any) => {
     if(responses[index].status === "fulfilled") {
@@ -638,37 +650,55 @@ async function refetchAllItemsStock() {
   emitter.emit("dismissLoader")
 }
 
-function isProductAvailableInOrder() {
-  return currentOrder.value.items.some((item: any) => item.productId === searchedProduct.value.productId)
+function isProductAvailableInOrder(productId: string) {
+  return currentOrder.value.items.some((item: any) => item.productId === productId);
 }
 
 async function findProduct() {
   if(!queryString.value.trim()) {
-    commonUtil.showToast(translate("Enter a valid product sku"), { position: 'top' });
+    commonUtil.showToast(translate("Enter a valid product identifier"), { position: 'top' });
     return;
   }
 
   isSearchingProduct.value = true;
   try {
+    const query = queryString.value.trim();
     const resp = await useSolrSearch().searchProducts({
+      "keyword": query,
       "filters": {
         "isVirtual": { value: "false" },
-        "isVariant": { value: "true" },
-        "sku": { value: `*${queryString.value}*` }
+        "isVariant": { value: "true" }
       },
       "viewSize": 1
-    })
-    if (resp.products.length) {
+    });
+    if (resp.products?.length) {
       searchedProduct.value = resp.products[0];
-      product.addProductToCached(searchedProduct.value)      
+      productSearchCount.value = resp.total;
+      product.addProductToCached(searchedProduct.value);
     } else {
-      throw resp
+      searchedProduct.value = {};
+      productSearchCount.value = 0;
     }
   } catch(err) {
-    searchedProduct.value = {}
-    logger.error("Product not found", err)
+    searchedProduct.value = {};
+    productSearchCount.value = 0;
+    logger.error("Product not found", err);
   }
-  isSearchingProduct.value = false
+  isSearchingProduct.value = false;
+}
+
+async function openAddProductModal() {
+  const addProductModal = await modalController.create({
+    component: AddProductModal,
+    componentProps: {
+      query: queryString.value,
+      addProductToQueue: ({ product }: any) => addProductToCount(product),
+      isProductInOrder: (id: string) => isProductAvailableInOrder(id),
+      pendingProductIds: pendingProductIds.value
+    }
+  });
+
+  await addProductModal.present();
 }
 
 async function fetchStock(productId: string) {
