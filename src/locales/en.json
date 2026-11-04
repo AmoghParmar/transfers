@@ -97,6 +97,7 @@
   "Failed to upload the file, please try again": "Failed to upload the file, please try again",
   "Fetching Data": "Fetching Data",
   "Fetching discrepancies...": "Fetching discrepancies...",
+  "Fetching inventory for the selected origin facility...": "Fetching inventory for the selected origin facility...",
   "Fetching order details": "Fetching order details",
   "Fetching time zones": "Fetching time zones",
   "Fetching transfer orders": "Fetching transfer orders",
