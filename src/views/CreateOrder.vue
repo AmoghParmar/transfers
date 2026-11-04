@@ -302,10 +302,20 @@ onIonViewDidEnter(async () => {
   stores.value = useProductStore().productStores
   const currentProductStoreId = (useProductStore().getCurrentProductStore as any)?.productStoreId || "";
   currentOrder.value.productStoreId = currentProductStoreId
-  facilities.value = productStore.getProductStoreFacilities?.length
-    ? [...productStore.getProductStoreFacilities]
-    : await productStore.fetchFacilitiesByProductStore(currentProductStoreId)
-  await Promise.allSettled([utilStore.fetchStoreCarrierAndMethods(currentProductStoreId), utilStore.fetchCarriersDetail()])
+
+  const facilityPromise = productStore.getProductStoreFacilities?.length
+    ? Promise.resolve([...productStore.getProductStoreFacilities])
+    : productStore.fetchFacilitiesByProductStore(currentProductStoreId)
+
+  const [facilitiesResp] = await Promise.allSettled([
+    facilityPromise,
+    utilStore.fetchStoreCarrierAndMethods(currentProductStoreId),
+    utilStore.fetchCarriersDetail()
+  ])
+  if (facilitiesResp.status === "fulfilled") {
+    facilities.value = facilitiesResp.value || []
+  }
+
   await fetchProductStoreDetails(currentProductStoreId);
   if(Object.keys(shipmentMethodsByCarrier.value)?.length) {
     currentOrder.value.carrierPartyId = Object.keys(shipmentMethodsByCarrier.value)[0]
@@ -351,12 +361,10 @@ async function addProductToCount() {
 }
 
 async function productStoreUpdated() {
-  // Reset selected facilities
   currentOrder.value.originFacilityId = "";
   currentOrder.value.destinationFacilityId = "";
   facilities.value = [];
 
-  // Clear item stock
   currentOrder.value.items.forEach((item: any) => {
     delete item.qoh;
     delete item.atp;
@@ -364,7 +372,6 @@ async function productStoreUpdated() {
 
   const selectedStoreId = currentOrder.value.productStoreId;
 
-  // Fetch facilities and carriers together behind the loader
   emitter.emit("presentLoader");
   try {
     const [facilitiesResp] = await Promise.all([
@@ -384,8 +391,6 @@ async function productStoreUpdated() {
       currentOrder.value.carrierPartyId = "";
       currentOrder.value.shipmentMethodTypeId = "";
     }
-  } catch (err) {
-    logger.error("Failed to update product store dependencies", err);
   } finally {
     emitter.emit("dismissLoader");
   }

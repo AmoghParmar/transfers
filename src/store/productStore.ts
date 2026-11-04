@@ -118,15 +118,7 @@ export const useProductStore = defineStore('productStore', {
     },
 
     async fetchProductStoreFacilities(productStoreId: string) {
-      let facilities = [] as any[];
-
-      if (!productStoreId) {
-        this.currentProductStore.facilities = facilities;
-        return;
-      }
-
-      facilities = await this.fetchFacilitiesByProductStore(productStoreId);
-      this.currentProductStore.facilities = facilities;
+      this.currentProductStore.facilities = await this.fetchFacilitiesByProductStore(productStoreId);
     },
     async fetchProductStoreDetails(payload: any): Promise<any> {
       return api({
