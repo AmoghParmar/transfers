@@ -10,7 +10,7 @@
     </ion-toolbar>
   </ion-header>
   <ion-content>
-    <ion-searchbar data-testid="add-product-searchbar" v-model="queryString" :placeholder="translate('Search SKU or product name')" @keyup.enter="handleSearch" @ionInput="handleInput"/>
+    <ion-searchbar data-testid="add-product-searchbar" v-model="queryString" :placeholder="translate('Search by product name, SKU, UPC or parent product name')" @keyup.enter="handleSearch" @ionInput="handleInput"/>
 
     <template v-if="products.length">
       <ion-list v-for="product in products" :key="product.productId" :data-testid="`add-product-row-${product.productId}`">
@@ -62,7 +62,7 @@ import {
   IonToolbar,
   modalController,
 } from "@ionic/vue";
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { closeOutline, checkmarkCircle } from "ionicons/icons";
 import Image from "@/components/Image.vue"
 import { commonUtil, logger, translate, useSolrSearch } from "@common";
@@ -70,15 +70,21 @@ import { useOrderStore } from "@/store/order";
 import { useProductStore } from "@/store/productStore";
 import { useProductStore as useProduct } from "@/store/product";
 
-const props = defineProps(["addProductToQueue", "pendingProductIds", "isProductInOrder", "onProductAdded"])
+const props = defineProps(["query", "addProductToQueue", "pendingProductIds", "isProductInOrder", "onProductAdded"])
 
 const getProduct = computed(() => useProduct().getProduct)
 const currentOrder = computed(() => useOrderStore().getCurrent)
 
-let queryString = ref('')
+let queryString = ref(props.query || '')
 const isSearching = ref(false);
 const products = ref([]) as any;
 const total = ref(0) as any;
+
+onMounted(() => {
+  if (queryString.value.trim()) {
+    handleSearch();
+  }
+})
 
 onUnmounted(() => {
   products.value = []
@@ -141,8 +147,8 @@ async function loadMoreProducts(event: any) {
 function addItemToOrder(product: any) {
   const itemToAdd = {
     product: product,
-    orderId: currentOrder.value.orderId,
-    facilityId: currentOrder.value.facilityId,
+    orderId: currentOrder.value?.orderId,
+    facilityId: currentOrder.value?.facilityId,
     onSuccess: () => {
       props.onProductAdded?.();
     },
