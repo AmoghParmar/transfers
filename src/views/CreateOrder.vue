@@ -121,8 +121,8 @@
             <ion-item lines="none" v-if="isSearchingProduct">
               <ion-spinner color="secondary" name="crescent"></ion-spinner>
             </ion-item>
-            <template v-else-if="searchedProduct.productId">
-              <ion-item lines="none">
+            <ion-list lines="none" v-else-if="searchedProduct.productId">
+              <ion-item>
                 <ion-thumbnail slot="start">
                   <Image :src="getProduct(searchedProduct.productId).mainImageUrl"/>
                 </ion-thumbnail>
@@ -137,7 +137,7 @@
               <ion-item button v-if="productSearchCount > 1" data-testid="view-more-results" detail @click="openAddProductModal">
                 {{ translate("View more results", { count: productSearchCount - 1 }) }}
               </ion-item>
-            </template>
+            </ion-list>
             <p v-else-if="queryString">{{ translate("No product found") }}</p>
           </div>
 
@@ -202,7 +202,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardTitle, IonCheckbox, IonChip, IonContent, IonDatetime, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonSelect, IonSelectOption, IonSpinner, IonThumbnail, IonTitle, IonToolbar, onIonViewDidEnter, alertController, modalController, popoverController } from '@ionic/vue';
+import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardTitle, IonCheckbox, IonChip, IonContent, IonDatetime, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSelect, IonSelectOption, IonSpinner, IonThumbnail, IonTitle, IonToolbar, onIonViewDidEnter, alertController, modalController, popoverController } from '@ionic/vue';
 import { addCircleOutline, checkmarkCircle, checkmarkDoneOutline, ellipsisVerticalOutline, informationCircleOutline, listOutline, sendOutline, storefrontOutline, downloadOutline } from 'ionicons/icons';
 import { computed, ref, watch } from "vue";
 import { commonUtil, emitter, logger, translate, useSolrSearch } from '@common';
