@@ -6,6 +6,7 @@ import { useProductStore } from "@/store/productStore";
 import { useProductStore as useProduct } from "@/store/product";
 import { useOrderStore } from "@/store/order";
 import { useUtilStore } from "@/store/util";
+import { useInventoryTransferStore } from "@/store/inventoryTransfer";
 
 interface UserState {
   permissions: any[]
@@ -97,16 +98,15 @@ export const useUserStore = defineStore("user", {
 
         this.oms = cookieHelper().get("oms") || '';
       } catch (error: any) {
-        commonUtil.showToast(translate("Failed to fetch user profile information"));
-        console.error("error", error);
+        logger.error("Failed to fetch user profile information", error);
         useAuth().clearAuth();
-        return Promise.reject(new Error(error));
+        return Promise.reject(error);
       }
     },
     async fetchPermissions() {
       const permissionId = import.meta.env.VITE_APP_PERMISSION_ID
       const serverPermissions = [] as string[]
-      const viewSize = 50
+      const viewSize = 200
       let viewIndex = 0
 
       try {
@@ -152,8 +152,9 @@ export const useUserStore = defineStore("user", {
         this.updateUserInfo({ userTimeZone: tzId })
         this.current.timeZone = tzId
       } catch (error: any) {
-        console.error("Failed to set user time zone", error);
-        commonUtil.showToast(translate("Failed to set user time zone"));
+        const serverError = commonUtil.getErrorMessage(error);
+        logger.error("Failed to set user time zone", error);
+        commonUtil.showToast(`${translate("Failed to set user time zone")}. ${serverError}`);
       }
     },
     async getAvailableTimeZones() {
@@ -172,7 +173,7 @@ export const useUserStore = defineStore("user", {
           this.timeZones = resp.data.timeZones.filter((timeZone: any) => DateTime.local().setZone(timeZone.id).isValid);
         }
       } catch (err) {
-        console.error('Error', err)
+        logger.error('Error', err)
       }
     },
     async postLogin() {
@@ -190,6 +191,7 @@ export const useUserStore = defineStore("user", {
     },
     async postLogout() {
       useOrderStore().$reset();
+      useInventoryTransferStore().$reset();
       useProduct().$reset();
       useProductStore().$reset();
       this.$reset();
